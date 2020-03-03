@@ -25,6 +25,7 @@ public:
 
     ~SimpleLRU() {
         _lru_index.clear();
+        while(_lru_head.get()!=_lru_tail) _lru_head=std::move(_lru_head->next);
         _lru_head.reset(); // TODO: Here is stack overflow
     }
 
