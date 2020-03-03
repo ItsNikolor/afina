@@ -6,7 +6,6 @@
 #include <mutex>
 #include <string>
 
-//#include "../../include/afina/Storage.h"
 #include <afina/Storage.h>
 namespace Afina {
 namespace Backend {
