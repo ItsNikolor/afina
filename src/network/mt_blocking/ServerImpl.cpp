@@ -170,7 +170,7 @@ void ServerImpl::Worker(int client_socket){
     char buffer[2048];
 
     try{
-        while(keep_going && readed=read(client_socket,buffer+readed,sizeof(buffer)-readed)>0){
+        while(keep_going && (readed=read(client_socket,buffer+readed,sizeof(buffer)-readed))>0){
             while(readed>0){
                 if(!command_to_execute){
                     size_t parsed;
@@ -190,7 +190,7 @@ void ServerImpl::Worker(int client_socket){
                     }
                 }
                 if(command_to_execute && arg_remains>0){
-                    auto len=min(arg_remains,readed);
+                    auto len=std::min(arg_remains,readed);
                     args.append(buffer,len);
                     readed-=len;
                     arg_remains-=len;
@@ -201,7 +201,7 @@ void ServerImpl::Worker(int client_socket){
                     command_to_execute->Execute(*pStorage, args, res);
 
                     res+="\r\n";
-                    if(send(socket,res.data(),res.size(),0)==-1){
+                    if(send(client_socket,res.data(),res.size(),0)==-1){
                         throw std::runtime_error("Send failed");
                     }
                     parser.Reset();
@@ -225,10 +225,10 @@ void ServerImpl::Worker(int client_socket){
         _logger->error("Something strange happend");
     }
 
-    close(socket);
+    close(client_socket);
     {
-        std::unique_lock lock(sockets_block)
-        sockets.erase(socket);
+        std::unique_lock<std::mutex> lock(sockets_block);
+        sockets.erase(client_socket);
         workers_count--;
         if(!running && workers_count==0){
             ended.notify_all(); 

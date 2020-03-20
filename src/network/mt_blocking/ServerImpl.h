@@ -4,6 +4,8 @@
 #include <atomic>
 #include <thread>
 #include<unordered_set>
+#include<condition_variable>
+
 
 #include <afina/network/Server.h>
 
