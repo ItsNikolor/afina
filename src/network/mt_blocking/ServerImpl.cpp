@@ -163,7 +163,7 @@ void ServerImpl::Worker(int client_socket){
     std::string argument_for_command;
     std::unique_ptr<Execute::Command> command_to_execute;
 
-    std::size_t readed=0;
+    int readed=0;
     std::string args="";
     bool keep_going=true;
 
@@ -190,7 +190,7 @@ void ServerImpl::Worker(int client_socket){
                     }
                 }
                 if(command_to_execute && arg_remains>0){
-                    auto len=std::min(arg_remains,readed);
+                    auto len=std::min(int(arg_remains),readed);
                     args.append(buffer,len);
                     readed-=len;
                     arg_remains-=len;
