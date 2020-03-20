@@ -177,9 +177,9 @@ void ServerImpl::Worker(int client_socket){
                     if(parser.Parse(buffer,readed,parsed)){
                         command_to_execute=parser.Build(arg_remains);
 
-                        //if (arg_remains > 0) {
-                         //   arg_remains += 2;
-                        //}
+                        if (arg_remains > 0) {
+                            arg_remains += 2;
+                        }
                     }
                     if(parsed){
                         readed-=parsed;
@@ -208,7 +208,8 @@ void ServerImpl::Worker(int client_socket){
                     command_to_execute.reset();
                     args.clear();
                     if(!running){
-                        keep_going=false; 
+                        keep_going=false;
+                        readed=0;
                         break;
                     }
 
