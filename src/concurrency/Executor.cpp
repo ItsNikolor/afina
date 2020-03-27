@@ -1,4 +1,4 @@
-#include "../../include/afina/concurrency/Executor.h"
+#include "afina/concurrency/Executor.h"
 
 
 namespace Afina {
