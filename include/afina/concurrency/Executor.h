@@ -8,6 +8,8 @@
 #include <queue>
 #include <string>
 #include <thread>
+#include<unordered_map>
+#include<atomic>
 
 namespace Afina {
 namespace Concurrency {
@@ -28,7 +30,7 @@ class Executor {
         kStopped
     };
 
-    Executor(std::string name, int size);
+    Executor(size_t low_watermark, size_t hight_watermark,size_t max_queue_size, size_t idle_time);
     ~Executor();
 
     /**
@@ -55,9 +57,29 @@ class Executor {
             return false;
         }
 
+
+
         // Enqueue new task
-        tasks.push_back(exec);
-        empty_condition.notify_one();
+        if(spare_count>0){
+            spare_count--;
+            tasks.push_back(exec);
+            empty_condition.notify_one();
+        }
+        else{
+            if(threads.size()<hight_watermark){
+                auto t= std::thread([this,exec](){exec();perform(this);});
+                t.detach();
+                threads.emplace(std::make_pair(t.get_id(),std::move(t)));
+            }
+            else{
+                if(tasks.size()<max_queue_size){
+                    spare_count--;
+                    tasks.push_back(exec);
+                }
+                else
+                    return false;
+            }
+        }
         return true;
     }
 
@@ -86,7 +108,7 @@ private:
     /**
      * Vector of actual threads that perorm execution
      */
-    std::vector<std::thread> threads;
+    std::unordered_map<std::thread::id,std::thread> threads;
 
     /**
      * Task queue
@@ -97,6 +119,10 @@ private:
      * Flag to stop bg threads
      */
     State state;
+
+    size_t low_watermark, hight_watermark,max_queue_size;
+    std::chrono::milliseconds idle_time;
+    int spare_count=0;//Спросить про atomic
 };
 
 } // namespace Concurrency
