@@ -9,7 +9,6 @@
 #include <string>
 #include <thread>
 #include<unordered_map>
-#include<atomic>
 
 namespace Afina {
 namespace Concurrency {
