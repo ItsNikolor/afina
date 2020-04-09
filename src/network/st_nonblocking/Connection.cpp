@@ -70,11 +70,13 @@ void Connection::DoRead(std::shared_ptr<Afina::Storage> pStorage) {
             std::string res;
             command_to_execute->Execute(*pStorage, argument_for_command, res);
 
-            if(writed==0){
+            if(writed==0)
                 _event.events=EPOLLIN|EPOLLOUT;
-            }
+            
             std::memcpy(out_buffer+writed,res.data(),res.size());
             writed+=res.size();
+            if(writed>max_size-100)
+                _event.events=EPOLLOUT;
 
             parser.Reset();
             command_to_execute.reset();
@@ -88,6 +90,7 @@ void Connection::DoRead(std::shared_ptr<Afina::Storage> pStorage) {
 // See Connection.h
 void Connection::DoWrite() {
     int sended=send(_socket,out_buffer,writed,0);
+    
     if(sended==0){
         OnClose();
         return;
@@ -97,9 +100,13 @@ void Connection::DoWrite() {
         return;
     }
     writed-=sended;
-    if(writed==0){
+    std::memmove(in_buffer,in_buffer+sended,writed);
+    if(writed<max_size-100)
+                _event.events=EPOLLOUT+EPOLLIN;
+    if(writed==0)
         _event.events=EPOLLIN;
-    }
+    
+
 }
 
 } // namespace STnonblock
