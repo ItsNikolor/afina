@@ -124,7 +124,7 @@ void ServerImpl::OnRun() {
     bool run = true;
     std::array<struct epoll_event, 64> mod_list;
     while (run) {
-        int nmod = epoll_wait(epoll_descr, &mod_list[0], mod_list.size(), -1);
+        int nmod = epoll_wait(epoll_descr, &mod_list[0], mod_list.size(), -1);//Может вернуться -1
         _logger->debug("Acceptor wokeup: {} events", nmod);
 
         for (int i = 0; i < nmod; i++) {
@@ -145,11 +145,12 @@ void ServerImpl::OnRun() {
             if ((current_event.events & EPOLLERR) || (current_event.events & EPOLLHUP)) {
                 pc->OnError();
             } else if (current_event.events & EPOLLRDHUP) {
-                pc->OnClose();
+               // pc->OnClose();
+               pc->is_alive=false;
             } else {
                 // Depends on what connection wants...
                 if (current_event.events & EPOLLIN) {
-                    pc->DoRead();
+                    pc->DoRead(pStorage);
                 }
                 if (current_event.events & EPOLLOUT) {
                     pc->DoWrite();

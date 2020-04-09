@@ -5,6 +5,11 @@
 
 #include <sys/epoll.h>
 
+#include <afina/Storage.h>
+#include <afina/execute/Command.h>
+
+#include "protocol/Parser.h"
+
 namespace Afina {
 namespace Network {
 namespace STnonblock {
@@ -12,18 +17,19 @@ namespace STnonblock {
 class Connection {
 public:
     Connection(int s) : _socket(s) {
-        std::memset(&_event, 0, sizeof(struct epoll_event));
+        //std::memset(&_event, 0, sizeof(struct epoll_event));
         _event.data.ptr = this;
+        _event.events=EPOLLIN;
     }
 
-    inline bool isAlive() const { return true; }
+    inline bool isAlive() const { return is_alive; }
 
     void Start();
 
 protected:
     void OnError();
     void OnClose();
-    void DoRead();
+    void DoRead(std::shared_ptr<Afina::Storage> pStorage);
     void DoWrite();
 
 private:
@@ -31,6 +37,24 @@ private:
 
     int _socket;
     struct epoll_event _event;
+
+    
+    static const int max_size=2048;
+    char in_buffer[max_size];
+    int readed=0;
+    int offset=0;
+    char out_buffer[max_size];
+    int writed=0;
+
+    bool is_alive=true;
+
+
+    std::size_t arg_remains;
+    Protocol::Parser parser;
+    std::string argument_for_command="";
+    std::unique_ptr<Execute::Command> command_to_execute;
+
+    //std::string args="";
 };
 
 } // namespace STnonblock
