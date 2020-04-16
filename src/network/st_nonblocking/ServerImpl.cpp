@@ -147,7 +147,7 @@ void ServerImpl::OnRun() {
                 pc->OnError();
             } else if (current_event.events & EPOLLRDHUP) {
                // pc->OnClose();
-               pc->is_alive=false;
+               pc->_is_alive=false;
             } else {
                 // Depends on what connection wants...
                 if (current_event.events & EPOLLIN) {
