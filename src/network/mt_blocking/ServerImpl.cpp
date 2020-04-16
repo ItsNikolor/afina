@@ -37,8 +37,8 @@ ServerImpl::~ServerImpl() {}
 
 // See Server.h
 void ServerImpl::Start(uint16_t port, uint32_t n_accept, uint32_t n_workers) {
-    max_workers=n_workers;
-    workers_count=0;
+    _max_workers=n_workers;
+    _workers_count=0;
 
     _logger = pLogging->select("network");
     _logger->info("Start mt_blocking network service");
@@ -77,29 +77,31 @@ void ServerImpl::Start(uint16_t port, uint32_t n_accept, uint32_t n_workers) {
         throw std::runtime_error("Socket listen() failed");
     }
 
-    running.store(true);
+    _running.store(true);
     _thread = std::thread(&ServerImpl::OnRun, this);
 }
 
 // See Server.h
 void ServerImpl::Stop() {
-    running.store(false);
-
-    {
-        std::unique_lock<std::mutex> lock(sockets_block);
-        max_workers=0;
-    }
+    _running.store(false);
     close(_server_socket);
-    //shutdown(_server_socket, SHUT_RDWR);
+    {
+        std::unique_lock<std::mutex> lock(_sockets_block);
+        _max_workers=0;
+    }
+    
+    //shutdown(_server_socket, SHUT_RDWR); спросить про shutdown
 }
 
 // See Server.h
 void ServerImpl::Join() {
-    std::unique_lock<std::mutex> lock(sockets_block);
-    while(running || workers_count!=0)
-        ended.wait(lock);
-    //assert(_thread.joinable());
-    //_thread.join();
+    assert(_thread.joinable());
+    _thread.join();
+
+    std::unique_lock<std::mutex> lock(_sockets_block);
+    while( _workers_count!=0)
+        _ended.wait(lock);
+
 }
 
 // See Server.h
@@ -109,7 +111,7 @@ void ServerImpl::OnRun() {
     // - command_to_execute: last command parsed out of stream
     // - arg_remains: how many bytes to read from stream to get command argument
     // - argument_for_command: buffer stores argument
-    while (running.load()) {
+    while (_running.load()) {
         _logger->debug("waiting for connection...");
 
         // The call to accept() blocks until the incoming connection arrives
@@ -141,10 +143,10 @@ void ServerImpl::OnRun() {
             setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv);
         }
 
-        std::unique_lock<std::mutex> lock(sockets_block);
-        if( workers_count<max_workers){
-            workers_count++;
-            sockets.insert(client_socket);
+        std::unique_lock<std::mutex> lock(_sockets_block);
+        if( _workers_count<_max_workers){
+            _workers_count++;
+            _sockets.insert(client_socket);
             lock.unlock();
             std::thread new_tr(&ServerImpl::Worker,this,client_socket);
             new_tr.detach();
@@ -160,23 +162,24 @@ void ServerImpl::OnRun() {
 void ServerImpl::Worker(int client_socket){
     std::size_t arg_remains;
     Protocol::Parser parser;
-    std::string argument_for_command;
-    std::unique_ptr<Execute::Command> command_to_execute;
+    std::string argument_for_command="";
+    std::unique_ptr<Execute::Command> command_to_execute=nullptr;
 
     int readed=0;
-    std::string args="";
+    int offset=0;
     bool keep_going=true;
 
-    char buffer[2048];
+    char buffer[2048]="";
 
     try{
-        while(keep_going && (readed=read(client_socket,buffer+readed,sizeof(buffer)-readed))>0){
+        while(keep_going && (readed=read(client_socket,buffer+offset,sizeof(buffer)-offset))>0){
+            readed+=offset;
+            offset=0;
             while(readed>0){
                 if(!command_to_execute){
                     size_t parsed;
                     if(parser.Parse(buffer,readed,parsed)){
                         command_to_execute=parser.Build(arg_remains);
-
                         if (arg_remains > 0) {
                             arg_remains += 2;
                         }
@@ -186,33 +189,33 @@ void ServerImpl::Worker(int client_socket){
                         std::memmove(buffer,buffer+parsed,readed);
                     }
                     else{
-                        if(!command_to_execute) break;
+                        offset=readed;
+                        break;
                     }
                 }
                 if(command_to_execute && arg_remains>0){
                     auto len=std::min(int(arg_remains),readed);
-                    args.append(buffer,len);
+                    argument_for_command.append(buffer,len);
                     readed-=len;
                     arg_remains-=len;
                     std::memmove(buffer,buffer+len,readed);
                 }
                 if(command_to_execute && !arg_remains){
                     std::string res;
-                    command_to_execute->Execute(*pStorage, args, res);
+                    command_to_execute->Execute(*pStorage, argument_for_command, res);
 
-                    res+="\r\n";
+                    //res+="\r\n";  ????????
                     if(send(client_socket,res.data(),res.size(),0)==-1){
                         throw std::runtime_error("Send failed");
                     }
                     parser.Reset();
                     command_to_execute.reset();
-                    args.clear();
-                    if(!running){
+                    argument_for_command.clear();
+                    if(!_running){
                         keep_going=false;
                         readed=0;
                         break;
                     }
-
                 }
             }
         }
@@ -220,6 +223,8 @@ void ServerImpl::Worker(int client_socket){
         else throw std::runtime_error("Read failed");
     }
     catch(std::exception er){
+        if(errno)
+            _logger->error("{}",strerror(errno));
         _logger->error("{}",er.what());
     }
     catch(...){
@@ -228,11 +233,11 @@ void ServerImpl::Worker(int client_socket){
 
     close(client_socket);
     {
-        std::unique_lock<std::mutex> lock(sockets_block);
-        sockets.erase(client_socket);
-        workers_count--;
-        if(!running && workers_count==0){
-            ended.notify_all(); 
+        std::unique_lock<std::mutex> lock(_sockets_block);
+        _sockets.erase(client_socket);
+        _workers_count--;
+        if(!_running && _workers_count==0){
+            _ended.notify_all(); 
         }
     }
 
