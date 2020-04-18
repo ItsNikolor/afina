@@ -102,7 +102,7 @@ void Worker::OnRun() {
                 // Depends on what connection wants...
                 if (current_event.events & EPOLLIN) {
                     _logger->trace("Got EPOLLIN");
-                    pconn->DoRead();
+                    pconn->DoRead(_pStorage);
                 }
                 if (current_event.events & EPOLLOUT) {
                     _logger->trace("Got EPOLLOUT");

@@ -3,6 +3,11 @@
 
 #include <cstring>
 
+#include <afina/Storage.h>
+#include <afina/execute/Command.h>
+
+#include "protocol/Parser.h"
+
 #include <sys/epoll.h>
 
 namespace Afina {
@@ -23,7 +28,7 @@ public:
 protected:
     void OnError();
     void OnClose();
-    void DoRead();
+    void DoRead(std::shared_ptr<Afina::Storage> pStorage);
     void DoWrite();
 
 private:
@@ -32,6 +37,21 @@ private:
 
     int _socket;
     struct epoll_event _event;
+
+    static const int _max_size=2048;
+    char _in_buffer[_max_size]="";
+    int _readed=0;
+    int _offset=0;
+    char _out_buffer[_max_size]="";
+    int _writed=0;
+
+    bool _is_alive=true;
+
+
+    std::size_t _arg_remains;
+    Protocol::Parser _parser;
+    std::string _argument_for_command="";
+    std::unique_ptr<Execute::Command> _command_to_execute = nullptr;
 };
 
 } // namespace MTnonblock
