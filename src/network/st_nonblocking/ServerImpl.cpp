@@ -15,13 +15,12 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include<unordered_map>
+#include <unordered_map>
 
 #include <spdlog/logger.h>
 
 #include <afina/Storage.h>
 #include <afina/logging/Service.h>
-
 
 #include "Utils.h"
 
@@ -125,7 +124,7 @@ void ServerImpl::OnRun() {
     bool run = true;
     std::array<struct epoll_event, 64> mod_list;
     while (run) {
-        int nmod = epoll_wait(epoll_descr, &mod_list[0], mod_list.size(), -1);//Может вернуться -1
+        int nmod = epoll_wait(epoll_descr, &mod_list[0], mod_list.size(), -1); //Может вернуться -1
         _logger->debug("Acceptor wokeup: {} events", nmod);
 
         for (int i = 0; i < nmod; i++) {
@@ -146,8 +145,8 @@ void ServerImpl::OnRun() {
             if ((current_event.events & EPOLLERR) || (current_event.events & EPOLLHUP)) {
                 pc->OnError();
             } else if (current_event.events & EPOLLRDHUP) {
-               // pc->OnClose();
-               pc->_is_alive=false;
+                // pc->OnClose();
+                pc->_is_alive = false;
             } else {
                 // Depends on what connection wants...
                 if (current_event.events & EPOLLIN) {
@@ -169,7 +168,7 @@ void ServerImpl::OnRun() {
 
                 connections.erase(pc->_socket);
 
-                //delete pc;
+                // delete pc;
             } else if (pc->_event.events != old_mask) {
                 if (epoll_ctl(epoll_descr, EPOLL_CTL_MOD, pc->_socket, &pc->_event)) {
                     _logger->error("Failed to change connection event mask");
@@ -177,7 +176,7 @@ void ServerImpl::OnRun() {
                     close(pc->_socket);
                     pc->OnClose();
                     connections.erase(pc->_socket);
-                    //delete pc;
+                    // delete pc;
                 }
             }
         }
@@ -211,22 +210,21 @@ void ServerImpl::OnNewConnection(int epoll_descr) {
         }
 
         // Register the new FD to be monitored by epoll.
-        //Connection *pc = new(std::nothrow) Connection(infd);
-        //auto tmp(new Connection(infd));
-        //connections.emplace(std::make_pair(infd,std::move(tmp)));
-        connections.emplace(std::make_pair(infd,new Connection(infd)));
-        auto pc=connections[infd].get();
+        // Connection *pc = new(std::nothrow) Connection(infd);
+        // auto tmp(new Connection(infd));
+        // connections.emplace(std::make_pair(infd,std::move(tmp)));
+        connections.emplace(std::make_pair(infd, new Connection(infd)));
+        auto pc = connections[infd].get();
         if (pc == nullptr) {
             throw std::runtime_error("Failed to allocate connection");
         }
-
 
         // Register connection in worker's epoll
         pc->Start();
         if (pc->isAlive()) {
             if (epoll_ctl(epoll_descr, EPOLL_CTL_ADD, pc->_socket, &pc->_event)) {
                 pc->OnError();
-                //delete pc;
+                // delete pc;
                 connections.erase(infd);
             }
         }

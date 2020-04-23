@@ -17,9 +17,9 @@ namespace STnonblock {
 class Connection {
 public:
     Connection(int s) : _socket(s) {
-        //std::memset(&_event, 0, sizeof(struct epoll_event)); зачем?
+        // std::memset(&_event, 0, sizeof(struct epoll_event)); зачем?
         _event.data.ptr = this;
-        _event.events=EPOLLIN;
+        _event.events = EPOLLIN;
     }
 
     inline bool isAlive() const { return _is_alive; }
@@ -38,22 +38,19 @@ private:
     int _socket;
     struct epoll_event _event;
 
-    
-    static const int _max_size=2048;
-    char _in_buffer[_max_size]="";
-    int _readed=0;
-    int _offset=0;
-    char _out_buffer[_max_size]="";
-    int _writed=0;
+    static const int _max_size = 2048;
+    char _in_buffer[_max_size] = "";
+    int _readed = 0;
+    int _offset = 0;
+    char _out_buffer[_max_size] = "";
+    int _writed = 0;
 
-    bool _is_alive=true;
-
+    bool _is_alive = true;
 
     std::size_t _arg_remains;
     Protocol::Parser _parser;
-    std::string _argument_for_command="";
+    std::string _argument_for_command = "";
     std::unique_ptr<Execute::Command> _command_to_execute = nullptr;
-
 };
 
 } // namespace STnonblock

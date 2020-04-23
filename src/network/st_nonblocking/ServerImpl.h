@@ -2,11 +2,11 @@
 #define AFINA_NETWORK_ST_NONBLOCKING_SERVER_H
 
 #include <thread>
+#include <unordered_map>
 #include <vector>
-#include<unordered_map>
 
-#include <afina/network/Server.h>
 #include "Connection.h"
+#include <afina/network/Server.h>
 
 namespace spdlog {
 class logger;
@@ -59,7 +59,7 @@ private:
     // IO thread
     std::thread _work_thread;
 
-    std::unordered_map<int, std::unique_ptr<Connection> > connections;
+    std::unordered_map<int, std::unique_ptr<Connection>> connections;
 };
 
 } // namespace STnonblock
