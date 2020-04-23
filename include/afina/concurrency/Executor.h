@@ -1,6 +1,7 @@
 #ifndef AFINA_CONCURRENCY_EXECUTOR_H
 #define AFINA_CONCURRENCY_EXECUTOR_H
 
+#include <atomic>
 #include <condition_variable>
 #include <functional>
 #include <memory>
@@ -8,7 +9,7 @@
 #include <queue>
 #include <string>
 #include <thread>
-#include<unordered_map>
+#include <unordered_map>
 
 namespace Afina {
 namespace Concurrency {
@@ -29,7 +30,7 @@ class Executor {
         kStopped
     };
 
-    Executor(size_t low_watermark, size_t hight_watermark,size_t max_queue_size, size_t idle_time);
+    Executor(size_t low_watermark, size_t hight_watermark, size_t max_queue_size, size_t idle_time);
     ~Executor();
 
     /**
@@ -56,26 +57,24 @@ class Executor {
             return false;
         }
 
-
-
         // Enqueue new task
-        if(spare_count>0){
+        if (spare_count > 0) {
             spare_count--;
             tasks.push_back(exec);
             empty_condition.notify_one();
-        }
-        else{
-            if(threads.size()<hight_watermark){
-                auto t= std::thread([this,exec](){exec();perform(this);});
+        } else {
+            if (threads.size() < hight_watermark) {
+                auto t = std::thread([this, exec]() {
+                    exec();
+                    perform(this);
+                });
                 t.detach();
-                threads.emplace(std::make_pair(t.get_id(),std::move(t)));
-            }
-            else{
-                if(tasks.size()<max_queue_size){
+                threads.emplace(std::make_pair(t.get_id(), std::move(t)));
+            } else {
+                if (tasks.size() < max_queue_size) {
                     spare_count--;
                     tasks.push_back(exec);
-                }
-                else
+                } else
                     return false;
             }
         }
@@ -107,7 +106,7 @@ private:
     /**
      * Vector of actual threads that perorm execution
      */
-    std::unordered_map<std::thread::id,std::thread> threads;
+    std::unordered_map<std::thread::id, std::thread> threads;
 
     /**
      * Task queue
@@ -119,9 +118,9 @@ private:
      */
     State state;
 
-    size_t low_watermark, hight_watermark,max_queue_size;
+    size_t low_watermark, hight_watermark, max_queue_size;
     std::chrono::milliseconds idle_time;
-    int spare_count=0;//Спросить про atomic
+    int spare_count = 0; //Спросить про atomic
 };
 
 } // namespace Concurrency
