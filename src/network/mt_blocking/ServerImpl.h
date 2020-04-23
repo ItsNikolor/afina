@@ -2,10 +2,9 @@
 #define AFINA_NETWORK_MT_BLOCKING_SERVER_H
 
 #include <atomic>
+#include <condition_variable>
 #include <thread>
-#include<unordered_set>
-#include<condition_variable>
-
+#include <unordered_set>
 
 #include <afina/network/Server.h>
 
@@ -49,7 +48,7 @@ private:
     // Atomic flag to notify threads when it is time to stop. Note that
     // flag must be atomic in order to safely publisj changes cross thread
     // bounds
-    std::atomic<bool> _running;  //спросить про atomic
+    std::atomic<bool> _running; //спросить про atomic
 
     // Server socket to accept connections on
     int _server_socket;
@@ -57,7 +56,7 @@ private:
     // Thread to run network on
     std::thread _thread;
 
-    int _max_workers,_workers_count;
+    int _max_workers, _workers_count;
     std::unordered_set<int> _sockets;
     std::mutex _sockets_block;
     std::condition_variable _ended;
