@@ -82,13 +82,13 @@ void ServerImpl::Start(uint16_t port, uint32_t n_accept, uint32_t n_workers) {
 // See Server.h
 void ServerImpl::Stop() {
     _running.store(false);
-    close(_server_socket);
+    shutdown(_server_socket, SHUT_RDWR);
     {
         std::unique_lock<std::mutex> lock(_sockets_block);
         _max_workers = 0;
+        for (auto socket : _sockets)
+            shutdown(socket, SHUT_RD);
     }
-
-    // shutdown(_server_socket, SHUT_RDWR); спросить про shutdown
 }
 
 // See Server.h
@@ -151,6 +151,7 @@ void ServerImpl::OnRun() {
             close(client_socket);
         }
     }
+    close(_server_socket);
 
     // Cleanup on exit...
     _logger->warn("Network stopped");
