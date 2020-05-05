@@ -53,26 +53,28 @@ class Executor {
         auto exec = std::bind(std::forward<F>(func), std::forward<Types>(args)...);
 
         std::unique_lock<std::mutex> lock(this->mutex);
+
         if (state != State::kRun) {
             return false;
         }
 
         // Enqueue new task
-        if (spare_count > 0) {
-            spare_count--;
+        if (busy_count < threads_count) {
+            busy_count++;
             tasks.push_back(exec);
             empty_condition.notify_one();
         } else {
-            if (threads.size() < hight_watermark) {
-                auto t = std::thread([this, exec]() {
-                    exec();
-                    perform(this);
-                });
+            if (threads_count < hight_watermark) {
+
+                tasks.push_back(exec);
+                // auto t = std::thread(perform,this); почему не видит perform
+                auto t = std::thread([this]() { perform(this); });
                 t.detach();
-                threads.emplace(std::make_pair(t.get_id(), std::move(t)));
+                threads_count++;
+                busy_count++;
+
             } else {
                 if (tasks.size() < max_queue_size) {
-                    spare_count--;
                     tasks.push_back(exec);
                 } else
                     return false;
@@ -102,11 +104,14 @@ private:
      * Conditional variable to await new data in case of empty queue
      */
     std::condition_variable empty_condition;
+    std::condition_variable stop_condition;
 
     /**
      * Vector of actual threads that perorm execution
      */
-    std::unordered_map<std::thread::id, std::thread> threads;
+
+    // std::unordered_map<std::thread::id, std::thread> threads;
+    int threads_count = 0;
 
     /**
      * Task queue
@@ -120,7 +125,7 @@ private:
 
     size_t low_watermark, hight_watermark, max_queue_size;
     std::chrono::milliseconds idle_time;
-    int spare_count = 0; //Спросить про atomic
+    int busy_count;
 };
 
 } // namespace Concurrency
