@@ -1,6 +1,7 @@
 #ifndef AFINA_CONCURRENCY_EXECUTOR_H
 #define AFINA_CONCURRENCY_EXECUTOR_H
 
+#include <atomic>
 #include <condition_variable>
 #include <functional>
 #include <memory>
@@ -8,6 +9,7 @@
 #include <queue>
 #include <string>
 #include <thread>
+#include <unordered_map>
 
 namespace Afina {
 namespace Concurrency {
@@ -28,7 +30,7 @@ class Executor {
         kStopped
     };
 
-    Executor(std::string name, int size);
+    Executor(size_t low_watermark, size_t hight_watermark, size_t max_queue_size, size_t idle_time);
     ~Executor();
 
     /**
@@ -51,13 +53,33 @@ class Executor {
         auto exec = std::bind(std::forward<F>(func), std::forward<Types>(args)...);
 
         std::unique_lock<std::mutex> lock(this->mutex);
+
         if (state != State::kRun) {
             return false;
         }
 
         // Enqueue new task
-        tasks.push_back(exec);
-        empty_condition.notify_one();
+        if (busy_count < threads_count) {
+            busy_count++;
+            tasks.push_back(exec);
+            empty_condition.notify_one();
+        } else {
+            if (threads_count < hight_watermark) {
+
+                tasks.push_back(exec);
+                // auto t = std::thread(perform,this); почему не видит perform
+                auto t = std::thread([this]() { perform(this); });
+                t.detach();
+                threads_count++;
+                busy_count++;
+
+            } else {
+                if (tasks.size() < max_queue_size) {
+                    tasks.push_back(exec);
+                } else
+                    return false;
+            }
+        }
         return true;
     }
 
@@ -82,11 +104,14 @@ private:
      * Conditional variable to await new data in case of empty queue
      */
     std::condition_variable empty_condition;
+    std::condition_variable stop_condition;
 
     /**
      * Vector of actual threads that perorm execution
      */
-    std::vector<std::thread> threads;
+
+    // std::unordered_map<std::thread::id, std::thread> threads;
+    int threads_count = 0;
 
     /**
      * Task queue
@@ -97,6 +122,10 @@ private:
      * Flag to stop bg threads
      */
     State state;
+
+    size_t low_watermark, hight_watermark, max_queue_size;
+    std::chrono::milliseconds idle_time;
+    int busy_count;
 };
 
 } // namespace Concurrency
