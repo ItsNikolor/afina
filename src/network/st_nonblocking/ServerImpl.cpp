@@ -210,11 +210,8 @@ void ServerImpl::OnNewConnection(int epoll_descr) {
         }
 
         // Register the new FD to be monitored by epoll.
-        // Connection *pc = new(std::nothrow) Connection(infd);
-        // auto tmp(new Connection(infd));
-        // connections.emplace(std::make_pair(infd,std::move(tmp)));
-        connections.emplace(std::make_pair(infd, new Connection(infd)));
-        auto pc = connections[infd].get();
+        connections.emplace(std::make_pair(infd, Connection(infd)));
+        auto pc = &connections.find(infd)->second;
         if (pc == nullptr) {
             throw std::runtime_error("Failed to allocate connection");
         }

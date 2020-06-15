@@ -59,7 +59,8 @@ private:
     // IO thread
     std::thread _work_thread;
 
-    std::unordered_map<int, std::unique_ptr<Connection>> connections;
+    // std::unordered_map<int, std::unique_ptr<Connection>> connections;
+    std::unordered_map<int, Connection> connections;
 };
 
 } // namespace STnonblock

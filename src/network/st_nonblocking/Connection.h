@@ -17,7 +17,7 @@ namespace STnonblock {
 class Connection {
 public:
     Connection(int s) : _socket(s) {
-        // std::memset(&_event, 0, sizeof(struct epoll_event)); зачем?
+        // std::memset(&_event, 0, sizeof(struct epoll_event)); //зачем?
         _event.data.ptr = this;
         _event.events = EPOLLIN;
     }
