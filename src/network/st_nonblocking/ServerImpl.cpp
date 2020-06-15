@@ -91,6 +91,7 @@ void ServerImpl::Stop() {
     if (eventfd_write(_event_fd, 1)) {
         throw std::runtime_error("Failed to wakeup workers");
     }
+    shutdown(_server_socket,SHUT_RDWR);
 }
 
 // See Server.h
@@ -182,6 +183,8 @@ void ServerImpl::OnRun() {
         }
     }
     _logger->warn("Acceptor stopped");
+    close(_server_socket);
+    close(_event_fd);
 }
 
 void ServerImpl::OnNewConnection(int epoll_descr) {
