@@ -5,102 +5,133 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <sys/uio.h>
+
 namespace Afina {
 namespace Network {
 namespace MTnonblock {
 
 // See Connection.h
-void Connection::Start() { std::cout << "Start" << std::endl; }
+void Connection::Start() {}
 
 // See Connection.h
-void Connection::OnError() { std::cout << "OnError" << std::endl; _is_alive=false; }
+void Connection::OnError() { _is_alive = false; }
 
 // See Connection.h
-void Connection::OnClose() { std::cout << "OnClose" << std::endl; _is_alive=false; }
+void Connection::OnClose() { _is_alive = false; }
 
 // See Connection.h
-void Connection::DoRead(std::shared_ptr<Afina::Storage> pStorage) {
-    //int readed;
-    while(int readed=read(_socket,_in_buffer+_offset,_max_size-_offset)){
-        if(readed==0){
-            OnClose();
+void Connection::DoRead() {
+    while (true) {
+        int readed = read(_socket, _in_buffer + _offset, _max_size - _offset);
+        if (readed == 0) {
+            // OnClose();
+            _is_alive = false;
             return;
         }
-        if(readed==-1){
-            if ((errno != EAGAIN) && (errno != EWOULDBLOCK)) 
-                       OnError();
+        if (readed == -1) {
+            if ((errno != EAGAIN) && (errno != EWOULDBLOCK))
+                OnError();
             return;
         }
-        readed+=_offset;
-        _offset=0;
-        while(readed>0){
-            if(!_command_to_execute){
+        readed += _offset;
+        _offset = 0;
+        while (readed > 0) {
+            if (!_command_to_execute) {
                 size_t parsed;
-                if(_parser.Parse(_in_buffer,readed,parsed)){
-                    _command_to_execute=_parser.Build(_arg_remains);
+                if (_parser.Parse(_in_buffer, readed, parsed)) {
+                    _command_to_execute = _parser.Build(_arg_remains);
 
                     if (_arg_remains > 0) {
                         _arg_remains += 2;
                     }
                 }
-                if(parsed){
-                    readed-=parsed;
-                    std::memmove(_in_buffer,_in_buffer+parsed,readed);
-                }
-                else{
-                    _offset=readed;
+                if (parsed) {
+                    readed -= parsed;
+                    std::memmove(_in_buffer, _in_buffer + parsed, readed);
+                } else {
+                    _offset = readed;
                     break;
                 }
             }
-            if(_command_to_execute && _arg_remains>0){
-                auto len=std::min(int(_arg_remains),readed);
-                _argument_for_command.append(_in_buffer,len);
-                readed-=len;
-                _arg_remains-=len;
-                std::memmove(_in_buffer,_in_buffer+len,readed);
+            if (_command_to_execute && _arg_remains > 0) {
+                auto len = std::min(int(_arg_remains), readed);
+                _argument_for_command.append(_in_buffer, len);
+                readed -= len;
+                _arg_remains -= len;
+                std::memmove(_in_buffer, _in_buffer + len, readed);
             }
-            if(_command_to_execute && !_arg_remains){
+            if (_command_to_execute && !_arg_remains) {
                 std::string res;
-                _command_to_execute->Execute(*pStorage, _argument_for_command, res);
+                _command_to_execute->Execute(*_pStorage, _argument_for_command, res);
 
-                if(_writed==0)
+                bool was_empty = _output_queue.empty();
+                _output_queue.push_back(res);
+
+                if (was_empty) {
                     _event.events |= EPOLLOUT;
-                
-                std::memcpy(_out_buffer+_writed,res.data(),res.size());
-                _writed+=res.size();
-                if(_writed>_max_size-100)
-                    _event.events=EPOLLOUT;
+                }
 
                 _parser.Reset();
                 _command_to_execute.reset();
                 _argument_for_command.clear();
-
             }
         }
     }
-        
 }
 
 // See Connection.h
 void Connection::DoWrite() {
-    int sended=send(_socket,_out_buffer,_writed,0);
-    
-    if(sended==0){
-        OnClose();
-        return;
-    }
-    if(sended==-1){
-        OnError();
-        return;
-    }
-    _writed-=sended;
-    std::memmove(_in_buffer,_in_buffer+sended,_writed);
-    if(_writed<_max_size-100)
-                _event.events=EPOLLOUT+EPOLLIN;
-    if(_writed==0)
-        _event.events=EPOLLIN;
-    
+    while (true) {
+        int ivlen = 0;
+        const size_t len_iov = 64;
+        struct iovec iov[len_iov];
+        for (auto &buf : _output_queue) {
+            iov[ivlen].iov_base = &buf[0];
+            iov[ivlen].iov_len = buf.size();
 
+            if (++ivlen == len_iov) {
+                break;
+            }
+        }
+
+        iov[0].iov_base = static_cast<void *>(static_cast<char *>(iov[0].iov_base) + _first_written);
+        iov[0].iov_len -= _first_written;
+
+        int written = writev(_socket, iov, ivlen);
+        if (written == 0) {
+            OnClose();
+            return;
+        }
+        if (written < 0) {
+            if ((errno == EAGAIN) || (errno == EWOULDBLOCK)) {
+                return;
+            } else {
+                OnError();
+                return;
+            }
+        }
+
+        // written bytes
+        written += _first_written;
+        auto it = _output_queue.begin();
+        for (auto end = _output_queue.end(); it != end; it++) {
+            if (it->size() <= written) {
+                written -= it->size();
+            } else {
+                break;
+            }
+        }
+
+        // it - first buffer not fullly written
+        // written - how much written from it buffer
+        _output_queue.erase(_output_queue.begin(), it);
+        _first_written = written;
+
+        if (_output_queue.empty()) {
+            _event.events = EPOLLIN;
+        }
+    }
 }
 
 } // namespace MTnonblock

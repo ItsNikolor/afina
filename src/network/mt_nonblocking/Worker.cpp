@@ -16,6 +16,8 @@
 #include "Connection.h"
 #include "Utils.h"
 
+#include <atomic>
+
 namespace Afina {
 namespace Network {
 namespace MTnonblock {
@@ -92,6 +94,7 @@ void Worker::OnRun() {
 
             // Some connection gets new data
             Connection *pconn = static_cast<Connection *>(current_event.data.ptr);
+            std::atomic_thread_fence(std::memory_order_acquire);
             if ((current_event.events & EPOLLERR) || (current_event.events & EPOLLHUP)) {
                 _logger->debug("Got EPOLLERR or EPOLLHUP, value of returned events: {}", current_event.events);
                 pconn->OnError();
@@ -102,7 +105,7 @@ void Worker::OnRun() {
                 // Depends on what connection wants...
                 if (current_event.events & EPOLLIN) {
                     _logger->trace("Got EPOLLIN");
-                    pconn->DoRead(_pStorage);
+                    pconn->DoRead();
                 }
                 if (current_event.events & EPOLLOUT) {
                     _logger->trace("Got EPOLLOUT");
@@ -127,6 +130,7 @@ void Worker::OnRun() {
                 }
                 delete pconn;
             }
+            std::atomic_thread_fence(std::memory_order_release);
         }
         // TODO: Select timeout...
     }
