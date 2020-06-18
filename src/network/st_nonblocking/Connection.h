@@ -10,13 +10,15 @@
 
 #include "protocol/Parser.h"
 
+#include <list>
+
 namespace Afina {
 namespace Network {
 namespace STnonblock {
 
 class Connection {
 public:
-    Connection(int s) : _socket(s) {
+    Connection(int s, std::shared_ptr<Afina::Storage> ps) : _socket(s), _pStorage(ps) {
         // std::memset(&_event, 0, sizeof(struct epoll_event)); //зачем?
         _event.data.ptr = this;
         _event.events = EPOLLIN;
@@ -29,7 +31,7 @@ public:
 protected:
     void OnError();
     void OnClose();
-    void DoRead(std::shared_ptr<Afina::Storage> pStorage);
+    void DoRead();
     void DoWrite();
 
 private:
@@ -37,13 +39,9 @@ private:
 
     int _socket;
     struct epoll_event _event;
-
-    static const int _max_size = 2048;
-    char _in_buffer[_max_size] = "";
-    int _readed = 0;
     int _offset = 0;
-    char _out_buffer[_max_size] = "";
-    int _writed = 0;
+    static const int _max_size = 2048;
+    char _in_buffer[_max_size];
 
     bool _is_alive = true;
 
@@ -51,6 +49,10 @@ private:
     Protocol::Parser _parser;
     std::string _argument_for_command = "";
     std::unique_ptr<Execute::Command> _command_to_execute = nullptr;
+
+    std::list<std::string> _output_queue;
+    std::size_t _first_written;
+    std::shared_ptr<Afina::Storage> _pStorage;
 };
 
 } // namespace STnonblock

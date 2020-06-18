@@ -91,7 +91,7 @@ void ServerImpl::Stop() {
     if (eventfd_write(_event_fd, 1)) {
         throw std::runtime_error("Failed to wakeup workers");
     }
-    shutdown(_server_socket,SHUT_RDWR);
+    shutdown(_server_socket, SHUT_RDWR);
 }
 
 // See Server.h
@@ -151,7 +151,7 @@ void ServerImpl::OnRun() {
             } else {
                 // Depends on what connection wants...
                 if (current_event.events & EPOLLIN) {
-                    pc->DoRead(pStorage);
+                    pc->DoRead();
                 }
                 if (current_event.events & EPOLLOUT) {
                     pc->DoWrite();
@@ -213,7 +213,7 @@ void ServerImpl::OnNewConnection(int epoll_descr) {
         }
 
         // Register the new FD to be monitored by epoll.
-        connections.emplace(std::make_pair(infd, Connection(infd)));
+        connections.emplace(std::make_pair(infd, Connection(infd, pStorage)));
         auto pc = &connections.find(infd)->second;
         if (pc == nullptr) {
             throw std::runtime_error("Failed to allocate connection");
