@@ -35,6 +35,9 @@ ServerImpl::~ServerImpl() {}
 
 // See Server.h
 void ServerImpl::Start(uint16_t port, uint32_t n_accept, uint32_t n_workers) {
+    _max_workers = n_workers;
+    _workers_count = 0;
+
     _logger = pLogging->select("network");
     _logger->info("Start mt_blocking network service");
 
@@ -72,21 +75,30 @@ void ServerImpl::Start(uint16_t port, uint32_t n_accept, uint32_t n_workers) {
         throw std::runtime_error("Socket listen() failed");
     }
 
-    running.store(true);
+    _running.store(true);
     _thread = std::thread(&ServerImpl::OnRun, this);
 }
 
 // See Server.h
 void ServerImpl::Stop() {
-    running.store(false);
+    _running.store(false);
     shutdown(_server_socket, SHUT_RDWR);
+    {
+        std::unique_lock<std::mutex> lock(_sockets_block);
+        _max_workers = 0;
+        for (auto socket : _sockets)
+            shutdown(socket, SHUT_RD);
+    }
 }
 
 // See Server.h
 void ServerImpl::Join() {
     assert(_thread.joinable());
     _thread.join();
-    close(_server_socket);
+
+    std::unique_lock<std::mutex> lock(_sockets_block);
+    while (_workers_count != 0)
+        _ended.wait(lock);
 }
 
 // See Server.h
@@ -96,11 +108,7 @@ void ServerImpl::OnRun() {
     // - command_to_execute: last command parsed out of stream
     // - arg_remains: how many bytes to read from stream to get command argument
     // - argument_for_command: buffer stores argument
-    std::size_t arg_remains;
-    Protocol::Parser parser;
-    std::string argument_for_command;
-    std::unique_ptr<Execute::Command> command_to_execute;
-    while (running.load()) {
+    while (_running.load()) {
         _logger->debug("waiting for connection...");
 
         // The call to accept() blocks until the incoming connection arrives
@@ -132,18 +140,102 @@ void ServerImpl::OnRun() {
             setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv);
         }
 
-        // TODO: Start new thread and process data from/to connection
-        {
-            static const std::string msg = "TODO: start new thread and process memcached protocol instead";
-            if (send(client_socket, msg.data(), msg.size(), 0) <= 0) {
-                _logger->error("Failed to write response to client: {}", strerror(errno));
-            }
+        std::unique_lock<std::mutex> lock(_sockets_block);
+        if (_workers_count < _max_workers) {
+            _workers_count++;
+            _sockets.insert(client_socket);
+            lock.unlock();
+            std::thread new_tr(&ServerImpl::Worker, this, client_socket);
+            new_tr.detach();
+        } else {
             close(client_socket);
         }
     }
+    close(_server_socket);
 
     // Cleanup on exit...
     _logger->warn("Network stopped");
+}
+void ServerImpl::Worker(int client_socket) {
+    std::size_t arg_remains;
+    Protocol::Parser parser;
+    std::string argument_for_command = "";
+    std::unique_ptr<Execute::Command> command_to_execute = nullptr;
+
+    int readed = 0;
+    int offset = 0;
+    bool keep_going = true;
+
+    char buffer[2048] = "";
+
+    try {
+        while (keep_going && (readed = read(client_socket, buffer + offset, sizeof(buffer) - offset)) > 0) {
+            readed += offset;
+            offset = 0;
+            while (readed > 0) {
+                if (!command_to_execute) {
+                    size_t parsed;
+                    if (parser.Parse(buffer, readed, parsed)) {
+                        command_to_execute = parser.Build(arg_remains);
+                        if (arg_remains > 0) {
+                            arg_remains += 2;
+                        }
+                    }
+                    if (parsed) {
+                        readed -= parsed;
+                        std::memmove(buffer, buffer + parsed, readed);
+                    } else {
+                        offset = readed;
+                        break;
+                    }
+                }
+                if (command_to_execute && arg_remains > 0) {
+                    auto len = std::min(int(arg_remains), readed);
+                    argument_for_command.append(buffer, len);
+                    readed -= len;
+                    arg_remains -= len;
+                    std::memmove(buffer, buffer + len, readed);
+                }
+                if (command_to_execute && !arg_remains) {
+                    std::string res;
+                    command_to_execute->Execute(*pStorage, argument_for_command, res);
+
+                    // res+="\r\n";  ????????
+                    if (send(client_socket, res.data(), res.size(), 0) == -1) {
+                        throw std::runtime_error("Send failed");
+                    }
+                    parser.Reset();
+                    command_to_execute.reset();
+                    argument_for_command.clear();
+                    if (!_running) {
+                        keep_going = false;
+                        readed = 0;
+                        break;
+                    }
+                }
+            }
+        }
+        if (readed == 0)
+            _logger->debug("Conection closed");
+        else
+            throw std::runtime_error("Read failed");
+    } catch (std::exception er) {
+        if (errno)
+            _logger->error("{}", strerror(errno));
+        _logger->error("{}", er.what());
+    } catch (...) {
+        _logger->error("Something strange happend");
+    }
+
+    close(client_socket);
+    {
+        std::unique_lock<std::mutex> lock(_sockets_block);
+        _sockets.erase(client_socket);
+        _workers_count--;
+        if (!_running && _workers_count == 0) {
+            _ended.notify_all();
+        }
+    }
 }
 
 } // namespace MTblocking
