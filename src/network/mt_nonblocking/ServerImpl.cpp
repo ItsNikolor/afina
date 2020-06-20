@@ -112,7 +112,7 @@ void ServerImpl::Stop() {
     _logger->warn("Stop network service");
     // Said workers to stop
     for (auto &w : _workers) {
-        w.Stop();
+        w.Stop(); // Redundant
     }
 
     // Wakeup threads that are sleep on epoll_wait

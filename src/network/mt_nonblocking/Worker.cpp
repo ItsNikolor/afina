@@ -59,7 +59,7 @@ void Worker::Start(int epoll_fd) {
 }
 
 // See Worker.h
-void Worker::Stop() { isRunning = false; }
+void Worker::Stop() { isRunning.store(false,std::memory_order_relaxed); }
 
 // See Worker.h
 void Worker::Join() {
@@ -78,23 +78,25 @@ void Worker::OnRun() {
     // for events to avoid thundering herd type behavior.
     int timeout = -1;
     std::array<struct epoll_event, 64> mod_list;
-    while (isRunning) {
+    while (isRunning.load(std::memory_order_relaxed)) {
         int nmod = epoll_wait(_epoll_fd, &mod_list[0], mod_list.size(), timeout);
         _logger->debug("Worker wokeup: {} events", nmod);
 
         for (int i = 0; i < nmod; i++) {
             struct epoll_event &current_event = mod_list[i];
 
+            std::atomic_thread_fence(std::memory_order_acquire);
+
             // nullptr is used by server for event_fd "interface", if we got here then server
             // signals us to wakeup to process some state change, ignore it in INNER loop, react
             // on changes in OUTHER loop
             if (current_event.data.ptr == nullptr) {
+                isRunning.store(false,std::memory_order_relaxed);
                 continue;
             }
 
             // Some connection gets new data
             Connection *pconn = static_cast<Connection *>(current_event.data.ptr);
-            std::atomic_thread_fence(std::memory_order_acquire);
             if ((current_event.events & EPOLLERR) || (current_event.events & EPOLLHUP)) {
                 _logger->debug("Got EPOLLERR or EPOLLHUP, value of returned events: {}", current_event.events);
                 pconn->OnError();
