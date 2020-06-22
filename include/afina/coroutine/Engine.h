@@ -114,7 +114,10 @@ public:
         char StackStartsHere;
         this->StackBottom = &StackStartsHere;
 
+        cur_routine = new context();
+
         // Start routine execution
+
         void *pc = run(main, std::forward<Ta>(args)...);
         idle_ctx = new context();
 
@@ -128,6 +131,7 @@ public:
 
         // Shutdown runtime
         delete idle_ctx;
+        delete cur_routine;
         this->StackBottom = 0;
     }
 
@@ -148,6 +152,7 @@ public:
         // execution starts here. Note that we have to acquire stack of the current function call to ensure
         // that function parameters will be passed along
         if (setjmp(pc->Environment) > 0) {
+            cur_routine = pc;
             // Created routine got control in order to start execution. Note that all variables, such as
             // context pointer, arguments and a pointer to the function comes from restored stack
 
