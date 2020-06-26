@@ -111,15 +111,16 @@ public:
      */
     template <typename... Ta> void start(void (*main)(Ta...), Ta &&... args) {
         // To acquire stack begin, create variable on stack and remember its address
-        char StackStartsHere;
-        this->StackBottom = &StackStartsHere;
-
-        cur_routine = new context();
+        volatile char StackStartsHere;
+        this->StackBottom = const_cast<char *>(&StackStartsHere);
 
         // Start routine execution
 
         void *pc = run(main, std::forward<Ta>(args)...);
         idle_ctx = new context();
+        idle_ctx->Low = this->StackBottom;
+        idle_ctx->Hight = idle_ctx->Low;
+        cur_routine = idle_ctx;
 
         if (setjmp(idle_ctx->Environment) > 0) {
             // Here: correct finish of the coroutine section
@@ -131,7 +132,6 @@ public:
 
         // Shutdown runtime
         delete idle_ctx;
-        delete cur_routine;
         this->StackBottom = 0;
     }
 
@@ -190,8 +190,11 @@ public:
         // setjmp remembers position from which routine could starts execution, but to make it correctly
         // it is neccessary to save arguments, pointer to body function, pointer to context, e.t.c - i.e
         // save stack.
-        Store(*pc);
+        volatile char StackBegin;
+        pc->Low = const_cast<char *>(&StackBegin);
+        pc->Hight = pc->Low;
 
+        Store(*pc);
         // Add routine as alive double-linked list
         pc->next = alive;
         alive = pc;
