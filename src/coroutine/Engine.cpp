@@ -8,27 +8,28 @@ namespace Afina {
 namespace Coroutine {
 
 void Engine::Store(context &ctx) {
-    char StackEnd;
-    ctx.Hight = &StackEnd;
-    size_t stack_size = abs(ctx.Hight - this->StackBottom + 1);
-    char *stack_adr = new char[stack_size];
-    memcpy(stack_adr, this->StackBottom, stack_size);
+    volatile char StackEnd;
+    ctx.Hight = std::max(const_cast<char *>(&StackEnd), ctx.Hight);
+    ctx.Low = std::min(const_cast<char *>(&StackEnd), ctx.Low);
 
-    auto old_stack = std::get<0>(ctx.Stack);
-    if (old_stack) {
-        delete old_stack;
+    size_t stack_size = ctx.Hight - ctx.Low;
+    char *stack_adr = std::get<0>(ctx.Stack);
+
+    if (stack_size > std::get<1>(ctx.Stack)) {
+        delete stack_adr;
+        stack_adr = new char[stack_size];
+        ctx.Stack = std::make_tuple(stack_adr, stack_size);
     }
-
-    ctx.Stack = std::make_tuple(stack_adr, stack_size);
+    memcpy(stack_adr, ctx.Low, stack_size);
+    return;
 }
 
 void Engine::Restore(context &ctx) {
-    char StackEnd;
-    if ((&StackEnd >= this->StackBottom && &StackEnd <= ctx.Hight) ||
-        (&StackEnd <= this->StackBottom && &StackEnd >= ctx.Hight)) {
+    volatile char StackEnd;
+    if (&StackEnd >= ctx.Low && &StackEnd <= ctx.Hight) {
         Restore(ctx);
     }
-    memcpy(this->StackBottom, std::get<0>(ctx.Stack), std::get<1>(ctx.Stack));
+    memcpy(ctx.Low, std::get<0>(ctx.Stack), ctx.Hight - ctx.Low);
     longjmp(ctx.Environment, 1);
 }
 
