@@ -111,12 +111,16 @@ public:
      */
     template <typename... Ta> void start(void (*main)(Ta...), Ta &&... args) {
         // To acquire stack begin, create variable on stack and remember its address
-        char StackStartsHere;
-        this->StackBottom = &StackStartsHere;
+        volatile char StackStartsHere;
+        this->StackBottom = const_cast<char *>(&StackStartsHere);
 
         // Start routine execution
+
         void *pc = run(main, std::forward<Ta>(args)...);
         idle_ctx = new context();
+        idle_ctx->Low = this->StackBottom;
+        idle_ctx->Hight = idle_ctx->Low;
+        cur_routine = idle_ctx;
 
         if (setjmp(idle_ctx->Environment) > 0) {
             // Here: correct finish of the coroutine section
@@ -148,6 +152,7 @@ public:
         // execution starts here. Note that we have to acquire stack of the current function call to ensure
         // that function parameters will be passed along
         if (setjmp(pc->Environment) > 0) {
+            cur_routine = pc;
             // Created routine got control in order to start execution. Note that all variables, such as
             // context pointer, arguments and a pointer to the function comes from restored stack
 
@@ -185,8 +190,11 @@ public:
         // setjmp remembers position from which routine could starts execution, but to make it correctly
         // it is neccessary to save arguments, pointer to body function, pointer to context, e.t.c - i.e
         // save stack.
-        Store(*pc);
+        volatile char StackBegin;
+        pc->Low = const_cast<char *>(&StackBegin);
+        pc->Hight = pc->Low;
 
+        Store(*pc);
         // Add routine as alive double-linked list
         pc->next = alive;
         alive = pc;
