@@ -96,24 +96,25 @@ public:
     void apply_slot(pending_operation &slot) {
         Slot *_slot = reinterpret_cast<Slot *>(((void *)&slot) - containerof(Slot, user_op));
         //Slot *_slot = container_of(&slot, struct Slot, user_op);
-
-        Slot *_slot;
+        //Slot *_slot;
+        
         _slot->generation=_lock.load(std::memory_order_acquire)&GEN_VAL_MASK;
         _slot->complete.store(false,std::memory_order_release);
 
 
-        while(_slot->next(std::memory_order_acquire)==nullptr){
-            auto slot_next=_queue->next_and_alive.load(std::memory_order_relaxed);
-            _slot->next_and_alive.store(slot_next,
-                                        std::memory_order_relaxed);
-
-            _queue->next_and_alive.compare_exchange_weak(slot_next,
-                                                        reinterpret_cast<uint64_t>(_slot)|LCK_BIT_MASK,
-                                                        std::memory_order_release,
-                                                        std::memory_order_relaxed);
-        }
-
         while(!_slot->complete.load(std::memory_order_acquire)){
+
+            while(_slot->next(std::memory_order_acquire)==nullptr){
+                auto slot_next=_queue->next_and_alive.load(std::memory_order_relaxed);
+                _slot->next_and_alive.store(slot_next,
+                                            std::memory_order_relaxed);
+
+                _queue->next_and_alive.compare_exchange_weak(slot_next,
+                                                            reinterpret_cast<uint64_t>(_slot)|LCK_BIT_MASK,
+                                                            std::memory_order_release,
+                                                            std::memory_order_relaxed);
+            }
+
             uint64_t gen;
             if((gen = try_lock(std::memory_order_release,
                             std::memory_order_relaxed))!=0){
